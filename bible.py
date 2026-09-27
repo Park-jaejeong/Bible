@@ -32,6 +32,17 @@ VOICE_OPTIONS = [
     ("👩 [여성] 혜미 (Windows 기본 오프라인)", "sapi:default"),
 ]
 
+# 낭독 속도 배율 목록 (표시 라벨, Edge-TTS rate 파라미터, Windows SAPI 속도 정수)
+SPEED_OPTIONS = [
+    ("0.8x (천천히)", "-20%", -2),
+    ("1.0x (보통)", "+0%", 0),
+    ("1.2x (추천/빠르게)", "+15%", 1),
+    ("1.3x", "+30%", 2),
+    ("1.5x (빠르게)", "+50%", 3),
+    ("1.8x", "+80%", 5),
+    ("2.0x (두 배속)", "+100%", 7),
+]
+
 # 성경 66권 약어 및 이름 매핑 정의
 BIBLE_BOOKS = [
     ('창', '창세기', ['창세기', '창']),
@@ -416,6 +427,18 @@ class BibleApp(tk.Tk):
         self.voice_combo.pack(side=tk.LEFT, padx=(6, 2))
         self.voice_combo.bind("<<ComboboxSelected>>", lambda e: self._on_voice_changed("main"))
 
+        # ⚡ 낭독 속도 선택 콤보박스
+        self.speed_combo = ttk.Combobox(
+            right_ctrl_frame,
+            values=[s[0] for s in SPEED_OPTIONS],
+            state="readonly",
+            width=15,
+            font=("맑은 고딕", 9)
+        )
+        self.speed_combo.current(2)  # 기본값 1.2x (추천/빠르게)
+        self.speed_combo.pack(side=tk.LEFT, padx=(2, 2))
+        self.speed_combo.bind("<<ComboboxSelected>>", lambda e: self._on_speed_changed("main"))
+
         # 🔊 성경 말씀 읽기(TTS) 버튼
         self.tts_btn = tk.Button(
             right_ctrl_frame,
@@ -511,6 +534,18 @@ class BibleApp(tk.Tk):
         )
         self.screen_tts_btn.pack(side=tk.RIGHT, padx=(0, 6))
 
+        # 스크린 모드 전용 속도 선택 콤보박스
+        self.screen_speed_combo = ttk.Combobox(
+            self.screen_header_frame,
+            values=[s[0] for s in SPEED_OPTIONS],
+            state="readonly",
+            width=16,
+            font=("맑은 고딕", 10)
+        )
+        self.screen_speed_combo.current(2)  # 기본값 1.2x (추천/빠르게)
+        self.screen_speed_combo.pack(side=tk.RIGHT, padx=(0, 6))
+        self.screen_speed_combo.bind("<<ComboboxSelected>>", lambda e: self._on_speed_changed("screen"))
+
         # 스크린 모드 전용 음성 선택 콤보박스
         self.screen_voice_combo = ttk.Combobox(
             self.screen_header_frame,
@@ -520,7 +555,7 @@ class BibleApp(tk.Tk):
             font=("맑은 고딕", 10)
         )
         self.screen_voice_combo.current(0)
-        self.screen_voice_combo.pack(side=tk.RIGHT, padx=(0, 10))
+        self.screen_voice_combo.pack(side=tk.RIGHT, padx=(0, 8))
         self.screen_voice_combo.bind("<<ComboboxSelected>>", lambda e: self._on_voice_changed("screen"))
 
         # 본문 출력 텍스트 영역
@@ -812,6 +847,18 @@ class BibleApp(tk.Tk):
         except Exception:
             pass
 
+    def _on_speed_changed(self, source):
+        """일반 모드 및 스크린 모드 속도 선택 콤보박스 동기화"""
+        try:
+            if source == "main":
+                idx = self.speed_combo.current()
+                self.screen_speed_combo.current(idx)
+            else:
+                idx = self.screen_speed_combo.current()
+                self.speed_combo.current(idx)
+        except Exception:
+            pass
+
     # ==========================================
     # 음성 낭독 (TTS) 제어 및 백그라운드 스레드
     # ==========================================
@@ -840,9 +887,17 @@ class BibleApp(tk.Tk):
         else:
             voice_mode = VOICE_OPTIONS[0][1]
 
+        speed_idx = self.speed_combo.current()
+        if 0 <= speed_idx < len(SPEED_OPTIONS):
+            edge_rate = SPEED_OPTIONS[speed_idx][1]
+            sapi_rate = SPEED_OPTIONS[speed_idx][2]
+        else:
+            edge_rate = "+15%"
+            sapi_rate = 1
+
         self.tts_thread = threading.Thread(
             target=self._tts_worker,
-            args=(list(self.current_results), voice_mode),
+            args=(list(self.current_results), voice_mode, edge_rate, sapi_rate),
             daemon=True
         )
         self.tts_thread.start()
@@ -896,7 +951,7 @@ class BibleApp(tk.Tk):
         self._update_tts_buttons(False)
         self._clear_reading_highlight()
 
-    def _tts_worker(self, verses, voice_mode):
+    def _tts_worker(self, verses, voice_mode, edge_rate="+15%", sapi_rate=1):
         """백그라운드에서 선택된 음성(신경망 AI 또는 Windows 로컬)으로 성경 구절을 순서대로 낭독"""
         if voice_mode.startswith("edge:") and HAS_EDGE_TTS:
             voice_id = voice_mode.replace("edge:", "")
@@ -918,7 +973,7 @@ class BibleApp(tk.Tk):
                     temp_files_to_clean.append(fpath)
                     try:
                         async def _gen():
-                            comm = edge_tts.Communicate(sp_text, voice_id, rate="+15%")
+                            comm = edge_tts.Communicate(sp_text, voice_id, rate=edge_rate)
                             await comm.save(fpath)
                         asyncio.run(_gen())
                         return fpath
@@ -1002,7 +1057,7 @@ class BibleApp(tk.Tk):
                 except Exception:
                     pass
 
-                speaker.Rate = 1
+                speaker.Rate = sapi_rate
 
                 for idx, (v_num, text) in enumerate(verses):
                     if self.tts_stop_requested:

@@ -19,6 +19,7 @@ class handler(BaseHTTPRequestHandler):
         if voice.startswith('ai:'):
             voice = voice.replace('ai:', '')
         text = query.get('text', [''])[0].strip()
+        rate = query.get('rate', ['+15%'])[0]
 
         if not text:
             self.send_response(400)
@@ -30,7 +31,7 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             async def generate_audio():
-                communicate = edge_tts.Communicate(text, voice)
+                communicate = edge_tts.Communicate(text, voice, rate=rate)
                 chunks = []
                 async for chunk in communicate.stream():
                     if chunk["type"] == "audio":

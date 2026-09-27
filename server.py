@@ -50,6 +50,7 @@ class BibleRequestHandler(SimpleHTTPRequestHandler):
             if voice.startswith('ai:'):
                 voice = voice.replace('ai:', '')
             text = query.get('text', [''])[0].strip()
+            rate = query.get('rate', ['+15%'])[0]
 
             if not text:
                 self.send_response(400)
@@ -59,7 +60,7 @@ class BibleRequestHandler(SimpleHTTPRequestHandler):
             try:
                 # edge-tts 오디오 생성 (mp3 바이트 스트림)
                 async def generate_audio():
-                    communicate = edge_tts.Communicate(text, voice)
+                    communicate = edge_tts.Communicate(text, voice, rate=rate)
                     chunks = []
                     async for chunk in communicate.stream():
                         if chunk["type"] == "audio":

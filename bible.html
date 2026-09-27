@@ -1411,13 +1411,41 @@
       });
     }
 
+    let audioCache = new Map();
+
+    function getAudioUrl(speechText, voice) {
+      const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8080';
+      return `${host}/api/tts?voice=${encodeURIComponent(voice.apiVoice)}&rate=%2B15%25&text=${encodeURIComponent(speechText)}`;
+    }
+
+    function preloadAudioVerse(index, voice) {
+      if (!currentResults || index >= currentResults.length || !voice || voice.type !== 'ai') return;
+      if (audioCache.has(index)) return;
+
+      const item = currentResults[index];
+      const text = item.text.trim();
+      if (!text) return;
+
+      const audio = new Audio(getAudioUrl(text, voice));
+      audio.preload = 'auto';
+      audio.playbackRate = 1.08;
+      audio.load();
+      audioCache.set(index, audio);
+    }
+
     function stopTTS() {
-      // 1. AI 오디오 재생 중지
+      // 1. AI 오디오 재생 중지 및 프리로드 캐시 해제
       if (currentAudio) {
         currentAudio.pause();
-        currentAudio.currentTime = 0;
+        currentAudio.onended = null;
+        currentAudio.onerror = null;
         currentAudio = null;
       }
+      audioCache.forEach(a => {
+        try { a.pause(); a.src = ''; } catch(e){}
+      });
+      audioCache.clear();
+
       // 2. 브라우저 Web Speech 재생 중지
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -1455,32 +1483,48 @@
 
       const voice = selectedVoiceItem || (availableVoices.length > 0 ? availableVoices[0] : null);
 
-      // A. 고품질 신경망 AI 음성 (서버 오디오 스트리밍)
+      // A. 고품질 신경망 AI 음성 (서버 오디오 스트리밍 + 프리로드 지연 제로)
       if (voice && voice.type === 'ai') {
         if (currentAudio) {
           currentAudio.pause();
+          currentAudio.onended = null;
+          currentAudio.onerror = null;
           currentAudio = null;
         }
 
-        const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8080';
-        const url = `${host}/api/tts?voice=${encodeURIComponent(voice.apiVoice)}&text=${encodeURIComponent(speechText)}`;
-        currentAudio = new Audio(url);
+        // 1. 이미 프리로드된 오디오 객체가 있으면 즉각 사용, 없으면 신규 생성
+        let audio = audioCache.get(index);
+        if (!audio) {
+          audio = new Audio(getAudioUrl(speechText, voice));
+          audio.preload = 'auto';
+        }
+        audio.playbackRate = 1.08;
+        currentAudio = audio;
 
-        currentAudio.onended = () => {
+        // 2. 현재 절을 재생하는 동안 바로 다음 절 오디오를 백그라운드에서 미리 다운로드!
+        preloadAudioVerse(index + 1, voice);
+
+        audio.onended = () => {
+          audioCache.delete(index);
           if (isTtsPlaying) {
+            // 지연 없이 바로 다음 절 재생
             speakVerseAt(index + 1);
           }
         };
 
-        currentAudio.onerror = (e) => {
-          console.warn('AI 음성 스트리밍 실패, 브라우저 음성으로 fallback 시도:', e);
+        audio.onerror = (e) => {
+          audioCache.delete(index);
+          console.warn('AI 음성 스트리밍 오류, 브라우저 음성으로 fallback 시도:', e);
           speakWithBrowserSpeech(speechText, voice, index);
         };
 
-        currentAudio.play().catch(err => {
-          console.warn('오디오 자동 재생 오류:', err);
-          speakWithBrowserSpeech(speechText, voice, index);
-        });
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn('오디오 자동 재생 오류:', err);
+            speakWithBrowserSpeech(speechText, voice, index);
+          });
+        }
       } else {
         // B. 브라우저 내장 Web Speech API
         speakWithBrowserSpeech(speechText, voice, index);
@@ -1495,7 +1539,7 @@
 
       const utter = new SpeechSynthesisUtterance(speechText);
       utter.lang = 'ko-KR';
-      utter.rate = 0.95; // 정갈하고 듣기 편한 속도
+      utter.rate = 1.15; // 시원하고 명료하게 빠른 속도 적용
 
       let pitch = (voice && voice.pitch) ? voice.pitch : 1.0;
       // 선택된 목소리가 남성인 경우 시스템 음성에서도 남성 음조로 자동 보정
@@ -1531,6 +1575,14 @@
       stopTTS();
       isTtsPlaying = true;
       updateTtsButtonState(true);
+
+      // 시작 시 0번 및 1번 구절을 즉시 사전 로딩하여 첫 절 및 둘째 절을 끊김 없이 연속 재생
+      const voice = selectedVoiceItem || (availableVoices.length > 0 ? availableVoices[0] : null);
+      if (voice && voice.type === 'ai') {
+        preloadAudioVerse(0, voice);
+        preloadAudioVerse(1, voice);
+      }
+
       speakVerseAt(0);
     }
 

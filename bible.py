@@ -905,51 +905,69 @@ class BibleApp(tk.Tk):
             temp_files_to_clean = []
 
             try:
-                for idx, (v_num, text) in enumerate(verses):
-                    if self.tts_stop_requested:
-                        break
+                from concurrent.futures import ThreadPoolExecutor
 
-                    self.after(0, lambda i=idx: self._highlight_reading_verse(i))
-
-                    # 절을 나타내는 숫자는 읽지 않고 본문 말씀만 낭독
-                    speech_text = text.strip()
-                    if not speech_text:
-                        continue
-
-                    temp_mp3 = os.path.join(tempfile.gettempdir(), f"bible_tts_{os.getpid()}_{idx}.mp3")
-                    temp_files_to_clean.append(temp_mp3)
-
-                    # Microsoft 고품질 신경망 AI 음성 합성
+                def _download_verse(idx_to_down):
+                    if idx_to_down >= len(verses) or self.tts_stop_requested:
+                        return None
+                    v_num_sub, txt_sub = verses[idx_to_down]
+                    sp_text = txt_sub.strip()
+                    if not sp_text:
+                        return None
+                    fpath = os.path.join(tempfile.gettempdir(), f"bible_tts_{os.getpid()}_{idx_to_down}.mp3")
+                    temp_files_to_clean.append(fpath)
                     try:
-                        async def _generate():
-                            comm = edge_tts.Communicate(speech_text, voice_id, rate="+0%")
-                            await comm.save(temp_mp3)
-                        asyncio.run(_generate())
-                    except Exception as gen_err:
-                        print("신경망 음성 합성 오류, SAPI fallback:", gen_err)
-                        # 네트워크 오류 시 SAPI로 대체
-                        self._speak_fallback_sapi(speech_text)
-                        continue
+                        async def _gen():
+                            comm = edge_tts.Communicate(sp_text, voice_id, rate="+15%")
+                            await comm.save(fpath)
+                        asyncio.run(_gen())
+                        return fpath
+                    except Exception as err:
+                        print("음성 합성 오류:", err)
+                        return None
 
-                    if self.tts_stop_requested:
-                        break
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    next_future = executor.submit(_download_verse, 0)
 
-                    # Windows 내장 무손실 MCI 오디오 재생
-                    winmm.mciSendStringW(f'close {alias}', None, 0, 0)
-                    ret = winmm.mciSendStringW(f'open "{temp_mp3}" type mpegvideo alias {alias}', None, 0, 0)
-                    if ret == 0:
-                        winmm.mciSendStringW(f'play {alias}', None, 0, 0)
-                        buf = ctypes.create_unicode_buffer(128)
-                        while not self.tts_stop_requested:
-                            winmm.mciSendStringW(f'status {alias} mode', buf, 128, 0)
-                            if buf.value.lower() != "playing":
-                                break
-                            time.sleep(0.05)
-                        winmm.mciSendStringW(f'stop {alias}', None, 0, 0)
+                    for idx, (v_num, text) in enumerate(verses):
+                        if self.tts_stop_requested:
+                            break
+
+                        self.after(0, lambda i=idx: self._highlight_reading_verse(i))
+
+                        speech_text = text.strip()
+                        if not speech_text:
+                            continue
+
+                        # 현재 절 파일 가져오기 (사전 로딩되어 준비되어 있음)
+                        temp_mp3 = next_future.result() if next_future else None
+
+                        # 현재 절을 재생하는 동안 바로 다음 절을 미리 다운로드!
+                        if idx + 1 < len(verses) and not self.tts_stop_requested:
+                            next_future = executor.submit(_download_verse, idx + 1)
+                        else:
+                            next_future = None
+
+                        if not temp_mp3 or not os.path.exists(temp_mp3):
+                            self._speak_fallback_sapi(speech_text)
+                            continue
+
+                        # Windows 내장 무손실 MCI 오디오 즉각 재생
                         winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+                        ret = winmm.mciSendStringW(f'open "{temp_mp3}" type mpegvideo alias {alias}', None, 0, 0)
+                        if ret == 0:
+                            winmm.mciSendStringW(f'play {alias}', None, 0, 0)
+                            buf = ctypes.create_unicode_buffer(128)
+                            while not self.tts_stop_requested:
+                                winmm.mciSendStringW(f'status {alias} mode', buf, 128, 0)
+                                if buf.value.lower() != "playing":
+                                    break
+                                time.sleep(0.02)
+                            winmm.mciSendStringW(f'stop {alias}', None, 0, 0)
+                            winmm.mciSendStringW(f'close {alias}', None, 0, 0)
 
-                    if self.tts_stop_requested:
-                        break
+                        if self.tts_stop_requested:
+                            break
 
             except Exception as e:
                 print("TTS 재생 오류:", e)
@@ -984,7 +1002,7 @@ class BibleApp(tk.Tk):
                 except Exception:
                     pass
 
-                speaker.Rate = -1
+                speaker.Rate = 1
 
                 for idx, (v_num, text) in enumerate(verses):
                     if self.tts_stop_requested:

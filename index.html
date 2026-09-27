@@ -507,38 +507,95 @@
       box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4) !important;
     }
 
-    /* 안내 카드 */
+    /* 첫화면 안내 설명서 카드 */
     .guide-card {
-      max-width: 820px;
+      max-width: 900px;
       width: 100%;
       background: var(--card-bg);
-      padding: 40px;
-      border-radius: 18px;
+      padding: 36px 40px;
+      border-radius: 20px;
       border: 1px solid var(--border);
-      line-height: 1.9;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      line-height: 1.8;
+      margin: 16px auto;
     }
-    .guide-card h2 {
-      color: var(--primary);
-      margin-bottom: 14px;
-      font-size: 24px;
+    .guide-header {
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 24px;
     }
-    .badge {
-      display: inline-block;
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    .guide-item {
       background: var(--bg);
       border: 1px solid var(--border);
-      padding: 8px 14px;
-      border-radius: 8px;
+      border-radius: 14px;
+      padding: 20px;
+      transition: all 0.2s ease;
+    }
+    .guide-item:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+      transform: translateY(-2px);
+    }
+    .guide-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    .guide-title {
+      font-size: 16.5px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .guide-desc {
       font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .guide-desc code {
+      background: rgba(37, 99, 235, 0.08);
+      color: var(--primary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .guide-samples {
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+    }
+    .badge-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 13.5px;
       font-weight: 600;
       cursor: pointer;
-      margin: 4px;
       color: var(--text);
       transition: all 0.15s;
     }
     .badge:hover {
       border-color: var(--primary);
       color: var(--primary);
-      background: var(--card-bg);
+      background: rgba(37, 99, 235, 0.06);
+      transform: translateY(-1px);
     }
 
     .footer-bar {
@@ -620,19 +677,75 @@
   <!-- 본문 영역 -->
   <main class="content-area" id="contentArea">
     <div class="guide-card">
-      <h2>📖 개역개정 성경 뷰어</h2>
-      <p style="font-size: 16px; margin-bottom: 12px; color: var(--text-muted);">
-        성경 장절을 검색창에 입력하면 해당 성경 본문이 즉시 화면에 표시됩니다.<br>
-        모든 교인들이 멀리서도 또렷하게 볼 수 있도록 상단의 <strong>[＋] / [－]</strong> 버튼과 <strong>[🖥️ 스크린 모드]</strong> 버튼을 활용해 보세요.
-      </p>
+      <div class="guide-header">
+        <h2 style="margin: 0; font-size: 24px; color: var(--primary); display: flex; align-items: center; gap: 10px;">
+          📖 성경 말씀 뷰어 & 음성 낭독 사용 안내
+        </h2>
+        <p style="margin: 8px 0 0; font-size: 15px; color: var(--text-muted);">
+          성경 장절을 간편하게 찾고, 시원한 큰 화면과 고품질 남/여 음성 낭독으로 은혜로운 말씀을 묵상해 보세요.
+        </p>
+      </div>
 
-      <div style="margin-top: 18px; font-weight: 700;">빠른 구절 예시:</div>
-      <div style="margin-top: 8px;">
-        <span class="badge" onclick="searchSample('창 1:1')">창세기 1:1</span>
-        <span class="badge" onclick="searchSample('요한복음 3:16-17')">요한복음 3:16-17</span>
-        <span class="badge" onclick="searchSample('시편 23편')">시편 23편 전체</span>
-        <span class="badge" onclick="searchSample('마태복음 5:3-10')">산상수훈 (마 5:3-10)</span>
-        <span class="badge" onclick="searchSample('로마서 8:28')">로마서 8:28</span>
+      <div class="guide-grid">
+        <!-- 1. 성경 구절 검색 -->
+        <div class="guide-item">
+          <div class="guide-icon">🔍</div>
+          <div class="guide-title">1. 빠른 성경 구절 검색</div>
+          <div class="guide-desc">
+            상단 검색창에 성경 약어와 장:절을 입력하고 <strong>[Enter]</strong> 또는 <strong>[찾기]</strong>를 누르세요.<br>
+            · <strong>단일 절:</strong> <code>창 1:1</code>, <code>요 3:16</code><br>
+            · <strong>범위 절:</strong> <code>창 1:1-5</code>, <code>마 5:3-10</code><br>
+            · <strong>장 전체:</strong> <code>시편 23</code>, <code>롬 8</code>
+          </div>
+        </div>
+
+        <!-- 2. 고품질 말씀 낭독 (TTS) -->
+        <div class="guide-item">
+          <div class="guide-icon">🔊</div>
+          <div class="guide-title">2. 고품질 말씀 낭독 (TTS)</div>
+          <div class="guide-desc">
+            <strong>[🔊 말씀 읽기]</strong> 버튼을 누르면 본문 말씀을 읽어줍니다.<br>
+            · <strong>절 번호(숫자)는 제외</strong>하고 순수 본문 말씀만 정갈하게 낭독합니다.<br>
+            · 상단 목소리 선택 상자에서 <strong>👨 [남성]</strong> / <strong>👩 [여성]</strong> 목소리를 자유롭게 선택할 수 있습니다.
+          </div>
+        </div>
+
+        <!-- 3. 예배/모임용 스크린 모드 -->
+        <div class="guide-item">
+          <div class="guide-icon">🖥️</div>
+          <div class="guide-title">3. 예배 / 모임용 스크린 모드</div>
+          <div class="guide-desc">
+            <strong>[🖥️ 스크린 모드]</strong> 버튼을 누르면 빔프로젝터, 대형 TV, 모니터 전체화면으로 시원하게 전환됩니다.<br>
+            · 낭독 중인 구절은 <strong>노란색으로 하이라이트</strong>되며 자동 스크롤됩니다.<br>
+            · 키보드의 <strong>ESC</strong> 키를 누르면 언제든지 원래 화면으로 돌아옵니다.
+          </div>
+        </div>
+
+        <!-- 4. 글자 크기 및 복사 -->
+        <div class="guide-item">
+          <div class="guide-icon">⚙️</div>
+          <div class="guide-title">4. 글자 크기 조절 & 본문 복사</div>
+          <div class="guide-desc">
+            · 상단의 <strong>[＋] / [－]</strong> 버튼 또는 숫자를 직접 입력하여 글자 크기를 조절할 수 있습니다.<br>
+            · <strong>[📋 복사]</strong> 버튼으로 찾은 성경 말씀을 손쉽게 복사할 수 있습니다.<br>
+            · <strong>[🌙]</strong> 버튼으로 주간/야간 다크모드를 전환할 수 있습니다.
+          </div>
+        </div>
+      </div>
+
+      <!-- 빠른 추천 바로가기 -->
+      <div class="guide-samples">
+        <div style="font-weight: 700; margin-bottom: 4px; color: var(--text); display: flex; align-items: center; gap: 6px;">
+          ✨ 자주 찾는 대표 성경 구절 (클릭하면 바로 검색됩니다):
+        </div>
+        <div class="badge-container">
+          <span class="badge" onclick="searchSample('창 1:1-5')">창세기 1:1-5</span>
+          <span class="badge" onclick="searchSample('요한복음 3:16-17')">요한복음 3:16-17</span>
+          <span class="badge" onclick="searchSample('시편 23편')">시편 23편 전체</span>
+          <span class="badge" onclick="searchSample('마태복음 5:3-10')">산상수훈 (마 5:3-10)</span>
+          <span class="badge" onclick="searchSample('로마서 8:28')">로마서 8:28</span>
+          <span class="badge" onclick="searchSample('빌립보서 4:13')">빌립보서 4:13</span>
+        </div>
       </div>
     </div>
   </main>
@@ -1426,9 +1539,22 @@
       }
     });
 
-    // 시작 시 기본 한글 성경 구절 바로 표시
-    queryInput.value = '창 1:1-5';
-    executeSearch();
+    // 시작 시 검색창에 포커스를 맞추어 첫 화면에 친절한 사용 설명서가 표시되도록 지원
+    if (queryInput) {
+      queryInput.focus();
+    }
+
+    // 상단 '📖 개역개정' 로고 클릭 시 첫 화면(사용 설명서)으로 초기화 복귀
+    const logoEl = document.querySelector('.logo');
+    if (logoEl) {
+      logoEl.style.cursor = 'pointer';
+      logoEl.title = '첫 화면 (사용 설명서)으로 돌아가기';
+      logoEl.addEventListener('click', () => {
+        stopTTS();
+        if (queryInput) queryInput.value = '';
+        location.reload();
+      });
+    }
   </script>
 </body>
 </html>

@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/api/voices",
+      "dest": "/api/voices.py"
+    },
+    {
+      "src": "/api/tts",
+      "dest": "/api/tts.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
+}

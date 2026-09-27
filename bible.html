@@ -1220,30 +1220,49 @@
     let selectedVoiceItem = null;
     let currentAudio = null;
 
-    function formatBrowserVoiceLabel(voice) {
-      const name = voice.name;
-      const lower = name.toLowerCase();
-      const isNatural = lower.includes('natural') || lower.includes('online') || lower.includes('신경망');
+    const DEFAULT_AI_VOICES = [
+      {
+        type: 'ai',
+        id: 'ai:ko-KR-SunHiNeural',
+        apiVoice: 'ko-KR-SunHiNeural',
+        label: '👩 [여성] 선희 (고품질 AI 음성)'
+      },
+      {
+        type: 'ai',
+        id: 'ai:ko-KR-InJoonNeural',
+        apiVoice: 'ko-KR-InJoonNeural',
+        label: '👨 [남성] 인준 (고품질 AI 음성)'
+      },
+      {
+        type: 'ai',
+        id: 'ai:ko-KR-HyunsuMultilingualNeural',
+        apiVoice: 'ko-KR-HyunsuMultilingualNeural',
+        label: '👨 [남성] 현수 (부드러운 AI 음성)'
+      }
+    ];
 
-      // 남성 / 여성 음성 식별
-      let genderBadge = '👤';
+    function formatBrowserVoiceLabel(voice) {
+      const name = voice.name || '';
+      const lower = name.toLowerCase();
+      let genderBadge = '👩 [여성]';
       if (lower.includes('injoon') || lower.includes('bongjin') || lower.includes('hyunsu') || lower.includes('male') || lower.includes('남성')) {
         genderBadge = '👨 [남성]';
-      } else if (lower.includes('sunhi') || lower.includes('heami') || lower.includes('female') || lower.includes('여성') || lower.includes('google')) {
-        genderBadge = '👩 [여성]';
-      } else {
-        genderBadge = '🎙️ [음성]';
       }
 
-      let displayName = name
-        .replace(/Microsoft\s*/i, '')
-        .replace(/Online\s*\(Natural\)\s*/i, '')
-        .replace(/Korean\s*\(Korea\)\s*/i, '')
-        .replace(/Korea\s*/i, '')
+      let cleanName = name
+        .replace(/Microsoft\s*/gi, '')
+        .replace(/Online\s*\(Natural\)\s*/gi, '')
+        .replace(/\(Korean\s*(\(Korea\))?\)/gi, '')
+        .replace(/Korean\s*\(Korea\)/gi, '')
+        .replace(/-\s*Korean/gi, '')
+        .replace(/-\s*\(\)/gi, '')
+        .replace(/-\s*$/gi, '')
         .trim();
 
-      const qualityBadge = isNatural ? ' (자연음)' : '';
-      return `${genderBadge} ${displayName}${qualityBadge}`;
+      if (cleanName.toLowerCase().includes('heami')) cleanName = '혜미 (시스템)';
+      else if (cleanName.includes('Google 한국의') || cleanName.includes('Google')) cleanName = '구글 한국어 (시스템)';
+
+      return `${genderBadge} ${cleanName}`;
     }
 
     async function populateVoiceList() {
@@ -1253,25 +1272,26 @@
 
       const combinedList = [];
 
-      // 1. 고품질 신경망 AI 음성 (서버 API 연동: 선희[여], 인준[남], 현수[남])
+      // 1. 고품질 신경망 AI 음성 (기본 3종 우선 등록 및 서버 확인)
+      let aiVoices = [...DEFAULT_AI_VOICES];
       try {
         const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8080';
         const res = await fetch(`${host}/api/voices`, { cache: 'no-store' });
         if (res.ok) {
           const aiData = await res.json();
-          aiData.forEach(v => {
-            combinedList.push({
+          if (Array.isArray(aiData) && aiData.length > 0) {
+            aiVoices = aiData.map(v => ({
               type: 'ai',
               id: v.id,
               apiVoice: v.id.replace('ai:', ''),
               label: `${v.gender === 'female' ? '👩 [여성]' : '👨 [남성]'} ${v.name}`
-            });
-          });
+            }));
+          }
         }
       } catch (err) {
-        // 서버 연결 불가 시 로컬 브라우저 음성으로 fallback 진행
         console.log('AI TTS 서버 확인:', err.message);
       }
+      combinedList.push(...aiVoices);
 
       // 2. 브라우저 내장 Web Speech API 음성 수집
       if ('speechSynthesis' in window) {
@@ -1288,7 +1308,7 @@
           });
         });
 
-        // 만약 브라우저에 남성 음성이 없고 여성만 있는 경우, 피치를 조절한 남성 톤 모드 추가 제공
+        // 만약 브라우저에 남성 음성이 없는 경우, 피치를 조절한 남성 톤 모드 추가 제공
         const hasMale = combinedList.some(v => v.label.includes('남성'));
         if (!hasMale && koVoices.length > 0) {
           const baseVoice = koVoices[0];
@@ -1296,8 +1316,8 @@
             type: 'browser_pitch',
             id: 'pitch_male_heami',
             rawVoice: baseVoice,
-            pitch: 0.65,
-            label: `👨 [남성 톤] ${baseVoice.name.replace(/Microsoft|Online|\(Natural\)|Korean/gi, '').trim()} (남성 음조)`
+            pitch: 0.70,
+            label: '👨 [남성 모드] 시스템 음조 변환'
           });
         }
       }
@@ -1476,7 +1496,13 @@
       const utter = new SpeechSynthesisUtterance(speechText);
       utter.lang = 'ko-KR';
       utter.rate = 0.95; // 정갈하고 듣기 편한 속도
-      utter.pitch = (voice && voice.pitch) ? voice.pitch : 1.0;
+
+      let pitch = (voice && voice.pitch) ? voice.pitch : 1.0;
+      // 선택된 목소리가 남성인 경우 시스템 음성에서도 남성 음조로 자동 보정
+      if (voice && (voice.id?.includes('InJoon') || voice.id?.includes('Hyunsu') || voice.label?.includes('남성'))) {
+        pitch = 0.72;
+      }
+      utter.pitch = pitch;
 
       if (voice && voice.rawVoice) {
         utter.voice = voice.rawVoice;

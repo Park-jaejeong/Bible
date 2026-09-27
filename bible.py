@@ -2,9 +2,35 @@ import os
 import sys
 import json
 import re
+import threading
+import time
+import tempfile
+import asyncio
+import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
+
+try:
+    import edge_tts
+    HAS_EDGE_TTS = True
+except ImportError:
+    HAS_EDGE_TTS = False
+
+try:
+    import win32com.client
+    import pythoncom
+    HAS_WIN32_TTS = True
+except ImportError:
+    HAS_WIN32_TTS = False
+
+# 고품질 낭독 음성 목록 (인간의 음성을 닮은 세련된 남/여 신경망 AI 음성 및 기본 음성)
+VOICE_OPTIONS = [
+    ("👩 [여성] 선희 (자연스러운 AI 음성)", "edge:ko-KR-SunHiNeural"),
+    ("👨 [남성] 인준 (중후하고 신뢰감 있는 AI 음성)", "edge:ko-KR-InJoonNeural"),
+    ("👨 [남성] 현수 (부드럽고 자연스러운 AI 음성)", "edge:ko-KR-HyunsuMultilingualNeural"),
+    ("👩 [여성] 혜미 (Windows 기본 오프라인)", "sapi:default"),
+]
 
 # 성경 66권 약어 및 이름 매핑 정의
 BIBLE_BOOKS = [
@@ -253,6 +279,14 @@ class BibleApp(tk.Tk):
         self.current_result_text = ""
         self._updating_entry = False
 
+        # 음성 낭독 (TTS) 관련 변수
+        self.is_tts_playing = False
+        self.tts_stop_requested = False
+        self.tts_thread = None
+        self.current_speaker = None
+        self.current_results = []
+        self.verse_ranges = []
+
         self._setup_ui()
         self._setup_events()
 
@@ -370,6 +404,35 @@ class BibleApp(tk.Tk):
         )
         self.btn_font_plus.pack(side=tk.LEFT, padx=2)
 
+        # 🎙️ 음성 목소리 선택 (남성/여성 고품질 AI 음성)
+        self.voice_combo = ttk.Combobox(
+            right_ctrl_frame,
+            values=[v[0] for v in VOICE_OPTIONS],
+            state="readonly",
+            width=24,
+            font=("맑은 고딕", 9)
+        )
+        self.voice_combo.current(0)
+        self.voice_combo.pack(side=tk.LEFT, padx=(6, 2))
+        self.voice_combo.bind("<<ComboboxSelected>>", lambda e: self._on_voice_changed("main"))
+
+        # 🔊 성경 말씀 읽기(TTS) 버튼
+        self.tts_btn = tk.Button(
+            right_ctrl_frame,
+            text=" 🔊 말씀 읽기 ",
+            command=self.toggle_tts,
+            font=("맑은 고딕", 10, "bold"),
+            bg="#2563EB",
+            fg="#FFFFFF",
+            activebackground="#1D4ED8",
+            activeforeground="#FFFFFF",
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=8,
+            pady=2
+        )
+        self.tts_btn.pack(side=tk.LEFT, padx=(2, 2))
+
         # 🖥️ 스크린모드 (전체화면) 버튼
         self.screen_btn = tk.Button(
             right_ctrl_frame,
@@ -385,7 +448,7 @@ class BibleApp(tk.Tk):
             padx=8,
             pady=2
         )
-        self.screen_btn.pack(side=tk.LEFT, padx=(8, 2))
+        self.screen_btn.pack(side=tk.LEFT, padx=(4, 2))
 
         # 본문 복사 버튼
         self.copy_btn = tk.Button(
@@ -430,6 +493,35 @@ class BibleApp(tk.Tk):
             pady=4
         )
         self.screen_exit_btn.pack(side=tk.RIGHT)
+
+        # 스크린 모드 전용 말씀 읽기 버튼
+        self.screen_tts_btn = tk.Button(
+            self.screen_header_frame,
+            text=" 🔊 읽기 ",
+            command=self.toggle_tts,
+            font=("맑은 고딕", 11, "bold"),
+            bg="#2563EB",
+            fg="#FFFFFF",
+            activebackground="#1D4ED8",
+            activeforeground="#FFFFFF",
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=12,
+            pady=4
+        )
+        self.screen_tts_btn.pack(side=tk.RIGHT, padx=(0, 6))
+
+        # 스크린 모드 전용 음성 선택 콤보박스
+        self.screen_voice_combo = ttk.Combobox(
+            self.screen_header_frame,
+            values=[v[0] for v in VOICE_OPTIONS],
+            state="readonly",
+            width=24,
+            font=("맑은 고딕", 10)
+        )
+        self.screen_voice_combo.current(0)
+        self.screen_voice_combo.pack(side=tk.RIGHT, padx=(0, 10))
+        self.screen_voice_combo.bind("<<ComboboxSelected>>", lambda e: self._on_voice_changed("screen"))
 
         # 본문 출력 텍스트 영역
         self.content_frame = tk.Frame(self, bg="#F1F5F9", padx=16, pady=2)
@@ -498,6 +590,9 @@ class BibleApp(tk.Tk):
         self.bind("<Control-plus>", lambda e: self.increase_font_size())
         self.bind("<Control-equal>", lambda e: self.increase_font_size())
         self.bind("<Control-minus>", lambda e: self.decrease_font_size())
+
+        # 창 닫기 시 음성 낭독 스레드 정상 종료 처리
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # 시작 시 기본 한글 성경 구절 바로 표시
         self.entry_var.set("창 1:1-5")
@@ -585,6 +680,7 @@ class BibleApp(tk.Tk):
         self.text_area.tag_config("body_text", foreground="#0F172A", font=("맑은 고딕", self.font_size))
         self.text_area.tag_config("header_title", foreground="#1E40AF", font=("맑은 고딕", header_size, "bold"), underline=True)
         self.text_area.tag_config("notice", foreground="#64748B", font=("맑은 고딕", self.font_size))
+        self.text_area.tag_config("reading_highlight", background="#FEF08A", foreground="#0F172A")
 
     def _show_initial_guide(self):
         self.text_area.config(state=tk.NORMAL)
@@ -603,6 +699,8 @@ class BibleApp(tk.Tk):
         raw_query = self.entry_var.get().strip()
         if not raw_query:
             return
+
+        self.stop_tts()
 
         parsed = parse_query(raw_query)
         if not parsed:
@@ -646,6 +744,9 @@ class BibleApp(tk.Tk):
             self._show_not_found(f"'{raw_query}'에 해당하는 성경 본문을 찾지 못했습니다.\n(장 또는 절 번호를 확인해 주세요)")
             return
 
+        self.current_results = results
+        self.verse_ranges = []
+
         self.title_label.config(text=f"📖 {range_desc}", fg="#0F172A")
         self.screen_title_label.config(text=f"📖 {range_desc}")
 
@@ -655,8 +756,11 @@ class BibleApp(tk.Tk):
         copy_lines = [f"[{range_desc}]"]
 
         for v_num, text in results:
+            start_pos = self.text_area.index("end-1c")
             self.text_area.insert(tk.END, f"{v_num} ", "verse_num")
             self.text_area.insert(tk.END, f"{text}\n", "body_text")
+            end_pos = self.text_area.index("end-1c")
+            self.verse_ranges.append((start_pos, end_pos))
             copy_lines.append(f"{v_num} {text}")
 
         self.text_area.config(state=tk.DISABLED)
@@ -664,6 +768,9 @@ class BibleApp(tk.Tk):
         self.entry.select_range(0, tk.END)
 
     def _show_not_found(self, msg):
+        self.stop_tts()
+        self.current_results = []
+        self.verse_ranges = []
         self.title_label.config(text="검색 결과 없음", fg="#DC2626")
         self.screen_title_label.config(text="검색 결과 없음")
         self.text_area.config(state=tk.NORMAL)
@@ -679,6 +786,244 @@ class BibleApp(tk.Tk):
         self.clipboard_append(self.current_result_text)
         self.copy_btn.config(text="✓ 복사됨")
         self.after(1500, lambda: self.copy_btn.config(text="본문 복사"))
+
+    def _on_voice_changed(self, source):
+        """일반 모드 및 스크린 모드 음성 선택 콤보박스 동기화"""
+        try:
+            if source == "main":
+                idx = self.voice_combo.current()
+                self.screen_voice_combo.current(idx)
+            else:
+                idx = self.screen_voice_combo.current()
+                self.voice_combo.current(idx)
+        except Exception:
+            pass
+
+    # ==========================================
+    # 음성 낭독 (TTS) 제어 및 백그라운드 스레드
+    # ==========================================
+    def toggle_tts(self):
+        """음성 낭독 토글 (시작 / 정지)"""
+        if self.is_tts_playing:
+            self.stop_tts()
+        else:
+            self.start_tts()
+
+    def start_tts(self):
+        """성경 구절 음성 낭독 시작"""
+        if not self.current_results:
+            messagebox.showinfo("알림", "낭독할 성경 구절이 없습니다.\n먼저 구절을 검색해 주세요.")
+            return
+
+        self.stop_tts()
+
+        self.is_tts_playing = True
+        self.tts_stop_requested = False
+        self._update_tts_buttons(True)
+
+        voice_idx = self.voice_combo.current()
+        if 0 <= voice_idx < len(VOICE_OPTIONS):
+            voice_mode = VOICE_OPTIONS[voice_idx][1]
+        else:
+            voice_mode = VOICE_OPTIONS[0][1]
+
+        self.tts_thread = threading.Thread(
+            target=self._tts_worker,
+            args=(list(self.current_results), voice_mode),
+            daemon=True
+        )
+        self.tts_thread.start()
+
+    def stop_tts(self):
+        """음성 낭독 즉시 중지 및 상태 초기화"""
+        self.tts_stop_requested = True
+
+        # 1. MCI 오디오 재생 중지 및 닫기
+        try:
+            alias = f"bible_tts_{os.getpid()}"
+            ctypes.windll.winmm.mciSendStringW(f'stop {alias}', None, 0, 0)
+            ctypes.windll.winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+        except Exception:
+            pass
+
+        # 2. SAPI 버퍼 즉시 비우기
+        if self.current_speaker:
+            try:
+                # 2 = SVSFPurgeBeforeSpeak
+                self.current_speaker.Speak("", 2)
+            except Exception:
+                pass
+
+        self.is_tts_playing = False
+        self._update_tts_buttons(False)
+        self._clear_reading_highlight()
+
+    def _update_tts_buttons(self, is_playing):
+        if is_playing:
+            self.tts_btn.config(text=" ⏹ 낭독 정지 ", bg="#DC2626", activebackground="#B91C1C")
+            self.screen_tts_btn.config(text=" ⏹ 정지 ", bg="#DC2626", activebackground="#B91C1C")
+        else:
+            self.tts_btn.config(text=" 🔊 말씀 읽기 ", bg="#2563EB", activebackground="#1D4ED8")
+            self.screen_tts_btn.config(text=" 🔊 읽기 ", bg="#2563EB", activebackground="#1D4ED8")
+
+    def _highlight_reading_verse(self, idx):
+        if not self.is_tts_playing:
+            return
+        self.text_area.tag_remove("reading_highlight", "1.0", tk.END)
+        if 0 <= idx < len(self.verse_ranges):
+            s, e = self.verse_ranges[idx]
+            self.text_area.tag_add("reading_highlight", s, e)
+            self.text_area.see(s)
+
+    def _clear_reading_highlight(self):
+        self.text_area.tag_remove("reading_highlight", "1.0", tk.END)
+
+    def _on_tts_finished(self):
+        self.is_tts_playing = False
+        self._update_tts_buttons(False)
+        self._clear_reading_highlight()
+
+    def _tts_worker(self, verses, voice_mode):
+        """백그라운드에서 선택된 음성(신경망 AI 또는 Windows 로컬)으로 성경 구절을 순서대로 낭독"""
+        if voice_mode.startswith("edge:") and HAS_EDGE_TTS:
+            voice_id = voice_mode.replace("edge:", "")
+            alias = f"bible_tts_{os.getpid()}"
+            winmm = ctypes.windll.winmm
+            temp_files_to_clean = []
+
+            try:
+                for idx, (v_num, text) in enumerate(verses):
+                    if self.tts_stop_requested:
+                        break
+
+                    self.after(0, lambda i=idx: self._highlight_reading_verse(i))
+
+                    # 절을 나타내는 숫자는 읽지 않고 본문 말씀만 낭독
+                    speech_text = text.strip()
+                    if not speech_text:
+                        continue
+
+                    temp_mp3 = os.path.join(tempfile.gettempdir(), f"bible_tts_{os.getpid()}_{idx}.mp3")
+                    temp_files_to_clean.append(temp_mp3)
+
+                    # Microsoft 고품질 신경망 AI 음성 합성
+                    try:
+                        async def _generate():
+                            comm = edge_tts.Communicate(speech_text, voice_id, rate="+0%")
+                            await comm.save(temp_mp3)
+                        asyncio.run(_generate())
+                    except Exception as gen_err:
+                        print("신경망 음성 합성 오류, SAPI fallback:", gen_err)
+                        # 네트워크 오류 시 SAPI로 대체
+                        self._speak_fallback_sapi(speech_text)
+                        continue
+
+                    if self.tts_stop_requested:
+                        break
+
+                    # Windows 내장 무손실 MCI 오디오 재생
+                    winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+                    ret = winmm.mciSendStringW(f'open "{temp_mp3}" type mpegvideo alias {alias}', None, 0, 0)
+                    if ret == 0:
+                        winmm.mciSendStringW(f'play {alias}', None, 0, 0)
+                        buf = ctypes.create_unicode_buffer(128)
+                        while not self.tts_stop_requested:
+                            winmm.mciSendStringW(f'status {alias} mode', buf, 128, 0)
+                            if buf.value.lower() != "playing":
+                                break
+                            time.sleep(0.05)
+                        winmm.mciSendStringW(f'stop {alias}', None, 0, 0)
+                        winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+
+                    if self.tts_stop_requested:
+                        break
+
+            except Exception as e:
+                print("TTS 재생 오류:", e)
+            finally:
+                # 임시 파일 정리
+                for fpath in temp_files_to_clean:
+                    try:
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                    except Exception:
+                        pass
+                self.after(0, self._on_tts_finished)
+
+        else:
+            # Windows SAPI 음성 엔진 사용
+            if not HAS_WIN32_TTS:
+                self.after(0, lambda: messagebox.showinfo("알림", "음성 모듈을 사용할 수 없습니다."))
+                self.after(0, self._on_tts_finished)
+                return
+
+            pythoncom.CoInitialize()
+            try:
+                speaker = win32com.client.Dispatch("SAPI.SpVoice")
+                self.current_speaker = speaker
+
+                try:
+                    for v in speaker.GetVoices():
+                        desc = v.GetDescription()
+                        if "Korean" in desc or "Heami" in desc:
+                            speaker.Voice = v
+                            break
+                except Exception:
+                    pass
+
+                speaker.Rate = -1
+
+                for idx, (v_num, text) in enumerate(verses):
+                    if self.tts_stop_requested:
+                        break
+
+                    self.after(0, lambda i=idx: self._highlight_reading_verse(i))
+                    speech_text = text
+                    speaker.Speak(speech_text, 0)
+
+                    if self.tts_stop_requested:
+                        break
+            except Exception as e:
+                print("SAPI 음성 낭독 오류:", e)
+            finally:
+                self.current_speaker = None
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
+                self.after(0, self._on_tts_finished)
+
+    def _speak_fallback_sapi(self, text):
+        """네트워크 연결 실패 시 오프라인 SAPI로 fallback 낭독"""
+        if not HAS_WIN32_TTS:
+            return
+        pythoncom.CoInitialize()
+        try:
+            speaker = win32com.client.Dispatch("SAPI.SpVoice")
+            self.current_speaker = speaker
+            try:
+                for v in speaker.GetVoices():
+                    desc = v.GetDescription()
+                    if "Korean" in desc or "Heami" in desc:
+                        speaker.Voice = v
+                        break
+            except Exception:
+                pass
+            speaker.Rate = -1
+            speaker.Speak(text, 0)
+        except Exception:
+            pass
+        finally:
+            self.current_speaker = None
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+    def _on_close(self):
+        """앱 종료 시 정리"""
+        self.stop_tts()
+        self.destroy()
 
 
 def main():

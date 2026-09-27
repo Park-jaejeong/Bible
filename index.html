@@ -214,6 +214,57 @@
       border-bottom-color: #3b82f6 !important;
     }
 
+    /* 🔊 음성 낭독 (TTS) 버튼 및 음성 선택 */
+    .btn-tts {
+      background: #4f46e5;
+      color: #ffffff;
+      font-size: 15px;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+      transition: all 0.2s;
+    }
+    .btn-tts:hover {
+      background: #4338ca;
+    }
+    .btn-tts.is-speaking {
+      background: #dc2626 !important;
+      box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4) !important;
+    }
+
+    .voice-select {
+      padding: 11px 14px;
+      font-size: 15px;
+      font-weight: 700;
+      border: 2px solid #6366f1;
+      border-radius: 10px;
+      background: var(--card-bg);
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s;
+      max-width: 250px;
+    }
+    .voice-select:focus {
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+    }
+
+    .voice-select-screen {
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 700;
+      border: 2px solid #6366f1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #0f172a;
+      cursor: pointer;
+      outline: none;
+      max-width: 230px;
+    }
+    body.dark-mode.is-screen-mode .voice-select-screen {
+      background: #1e293b;
+      color: #f8fafc;
+      border-color: #818cf8;
+    }
+
     /* 🖥️ 스크린모드 버튼 (가장 눈에 잘 띄게 초록/에메랄드 강조) */
     .btn-screen-mode {
       background: var(--accent-screen);
@@ -297,6 +348,20 @@
     .verse-content {
       flex: 1;
       color: var(--text);
+    }
+
+    /* 🔊 현재 음성으로 읽고 있는 구절 강조 */
+    .verse-line.reading-active {
+      background: rgba(37, 99, 235, 0.12) !important;
+      border-left: 5px solid #2563eb !important;
+      border-radius: 8px;
+      padding: 6px 12px;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+      transition: all 0.2s ease;
+    }
+    body.dark-mode .verse-line.reading-active {
+      background: rgba(96, 165, 250, 0.22) !important;
+      border-left-color: #60a5fa !important;
     }
 
     /* ======================================================== */
@@ -419,6 +484,29 @@
       transform: scale(1.03);
     }
 
+    /* 스크린 모드 음성 읽기 버튼 */
+    .tts-screen-btn {
+      background: #4f46e5;
+      color: #ffffff;
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tts-screen-btn:hover {
+      background: #4338ca;
+      transform: scale(1.03);
+    }
+    .tts-screen-btn.is-speaking {
+      background: #dc2626 !important;
+      box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4) !important;
+    }
+
     /* 안내 카드 */
     .guide-card {
       max-width: 820px;
@@ -469,9 +557,15 @@
   <!-- 스크린 모드 상단 고정 헤더 바 (구절이 많아 스크롤을 내려도 항상 최상단에 고정) -->
   <div id="screenFixedHeader" class="screen-fixed-header">
     <div id="screenFixedTitle" class="screen-fixed-title">📖 성경 본문</div>
-    <button id="exitScreenBtn" class="exit-screen-btn">
-      ✕ 스크린 모드 종료 (ESC)
-    </button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <select id="screenVoiceSelect" class="voice-select-screen" title="낭독 목소리 선택 (남/여 구분)"></select>
+      <button id="screenTtsBtn" class="tts-screen-btn" title="찾은 성경 구절 음성으로 읽기 / 멈춤">
+        🔊 성경 읽기
+      </button>
+      <button id="exitScreenBtn" class="exit-screen-btn">
+        ✕ 스크린 모드 종료 (ESC)
+      </button>
+    </div>
   </div>
 
   <!-- 상단 메인 컨트롤 바 (한눈에 모든 버튼을 볼 수 있는 레이아웃) -->
@@ -492,6 +586,12 @@
       </div>
       <button id="btnFontPlus" class="btn-font-step" title="글자 확대 (＋)">＋</button>
     </div>
+
+    <!-- 🔊 음성 읽기 (TTS) 목소리 선택 및 버튼 -->
+    <select id="voiceSelect" class="voice-select" title="낭독 목소리 선택 (남성/여성 고품질 음성)"></select>
+    <button id="ttsBtn" class="btn btn-tts" title="찾은 성경 구절을 음성으로 읽어줍니다">
+      🔊 성경 읽기
+    </button>
 
     <!-- 🖥️ 스크린 모드 버튼 (가장 눈에 띄는 초록색 버튼) -->
     <button id="screenModeBtn" class="btn btn-screen-mode" title="예배당 빔프로젝터 / TV 화면으로 전 교인 함께 보기">
@@ -878,8 +978,11 @@
     }
 
     let currentCopyText = '';
+    let currentResults = [];
+    let currentRangeTitle = '';
 
     function executeSearch() {
+      stopTTS();
       const input = document.getElementById('queryInput');
       let rawQ = input.value.trim();
       const content = document.getElementById('contentArea');
@@ -887,12 +990,14 @@
       const copyBtn = document.getElementById('copyBtn');
 
       if (!rawQ) return;
+      stopTTS();
 
       const parsed = parseQuery(rawQ);
       if (!parsed) {
         title.innerHTML = '❌ 인식할 수 없는 구절 형식';
         copyBtn.style.display = 'none';
         content.innerHTML = `<div class="guide-card"><h3>'${rawQ}' 형식을 인식할 수 없습니다.</h3><p style="margin-top:8px;">입력 예시: 창 1:1, 요 3:16, 시편 23편, 마 5:3-10</p></div>`;
+        currentResults = [];
         return;
       }
 
@@ -932,8 +1037,12 @@
         title.innerHTML = '검색 결과 없음';
         copyBtn.style.display = 'none';
         content.innerHTML = `<div class="guide-card"><h3>'${rawQ}'에 해당하는 성경 본문을 찾지 못했습니다.</h3><p style="margin-top:8px;">장/절 번호가 성경 범위 내에 있는지 확인해 주세요.</p></div>`;
+        currentResults = [];
         return;
       }
+
+      currentResults = results;
+      currentRangeTitle = rangeTitle;
 
       title.innerHTML = `📖 ${rangeTitle}`;
       const fixedTitle = document.getElementById('screenFixedTitle');
@@ -943,8 +1052,8 @@
       let html = `<div class="scripture-card">`;
       html += `<div class="screen-scripture-header">📖 ${rangeTitle}</div>`;
       const lines = [`[${rangeTitle}]`];
-      results.forEach(r => {
-        html += `<div class="verse-line"><div class="verse-number">${r.v}</div><div class="verse-content">${r.text}</div></div>`;
+      results.forEach((r, idx) => {
+        html += `<div class="verse-line" id="verse-line-${idx}"><div class="verse-number">${r.v}</div><div class="verse-content">${r.text}</div></div>`;
         lines.push(`${r.v} ${r.text}`);
       });
       html += `</div>`;
@@ -987,6 +1096,321 @@
         btn.textContent = '✓ 복사됨';
         setTimeout(() => { btn.textContent = '📋 복사'; }, 1500);
       });
+    });
+
+    /* ========================================================
+       성경 구절 음성 낭독(TTS) 기능 (남/여 세련된 AI 및 브라우저 음성 선택 지원)
+       ======================================================== */
+    let isTtsPlaying = false;
+    let currentTtsIndex = 0;
+    let availableVoices = [];
+    let selectedVoiceItem = null;
+    let currentAudio = null;
+
+    function formatBrowserVoiceLabel(voice) {
+      const name = voice.name;
+      const lower = name.toLowerCase();
+      const isNatural = lower.includes('natural') || lower.includes('online') || lower.includes('신경망');
+
+      // 남성 / 여성 음성 식별
+      let genderBadge = '👤';
+      if (lower.includes('injoon') || lower.includes('bongjin') || lower.includes('hyunsu') || lower.includes('male') || lower.includes('남성')) {
+        genderBadge = '👨 [남성]';
+      } else if (lower.includes('sunhi') || lower.includes('heami') || lower.includes('female') || lower.includes('여성') || lower.includes('google')) {
+        genderBadge = '👩 [여성]';
+      } else {
+        genderBadge = '🎙️ [음성]';
+      }
+
+      let displayName = name
+        .replace(/Microsoft\s*/i, '')
+        .replace(/Online\s*\(Natural\)\s*/i, '')
+        .replace(/Korean\s*\(Korea\)\s*/i, '')
+        .replace(/Korea\s*/i, '')
+        .trim();
+
+      const qualityBadge = isNatural ? ' (자연음)' : '';
+      return `${genderBadge} ${displayName}${qualityBadge}`;
+    }
+
+    async function populateVoiceList() {
+      const voiceSelect = document.getElementById('voiceSelect');
+      const screenVoiceSelect = document.getElementById('screenVoiceSelect');
+      if (!voiceSelect || !screenVoiceSelect) return;
+
+      const combinedList = [];
+
+      // 1. 고품질 신경망 AI 음성 (서버 API 연동: 선희[여], 인준[남], 현수[남])
+      try {
+        const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8080';
+        const res = await fetch(`${host}/api/voices`, { cache: 'no-store' });
+        if (res.ok) {
+          const aiData = await res.json();
+          aiData.forEach(v => {
+            combinedList.push({
+              type: 'ai',
+              id: v.id,
+              apiVoice: v.id.replace('ai:', ''),
+              label: `${v.gender === 'female' ? '👩 [여성]' : '👨 [남성]'} ${v.name}`
+            });
+          });
+        }
+      } catch (err) {
+        // 서버 연결 불가 시 로컬 브라우저 음성으로 fallback 진행
+        console.log('AI TTS 서버 확인:', err.message);
+      }
+
+      // 2. 브라우저 내장 Web Speech API 음성 수집
+      if ('speechSynthesis' in window) {
+        const browserVoices = window.speechSynthesis.getVoices() || [];
+        let koVoices = browserVoices.filter(v => v.lang === 'ko-KR' || v.lang.startsWith('ko'));
+
+        // 브라우저 한국어 음성이 있다면 추가
+        koVoices.forEach(bv => {
+          combinedList.push({
+            type: 'browser',
+            id: bv.voiceURI || bv.name,
+            rawVoice: bv,
+            label: formatBrowserVoiceLabel(bv)
+          });
+        });
+
+        // 만약 브라우저에 남성 음성이 없고 여성만 있는 경우, 피치를 조절한 남성 톤 모드 추가 제공
+        const hasMale = combinedList.some(v => v.label.includes('남성'));
+        if (!hasMale && koVoices.length > 0) {
+          const baseVoice = koVoices[0];
+          combinedList.push({
+            type: 'browser_pitch',
+            id: 'pitch_male_heami',
+            rawVoice: baseVoice,
+            pitch: 0.65,
+            label: `👨 [남성 톤] ${baseVoice.name.replace(/Microsoft|Online|\(Natural\)|Korean/gi, '').trim()} (남성 음조)`
+          });
+        }
+      }
+
+      if (combinedList.length === 0) return;
+
+      availableVoices = combinedList;
+
+      const currentSelectedId = selectedVoiceItem ? selectedVoiceItem.id : '';
+
+      voiceSelect.innerHTML = '';
+      screenVoiceSelect.innerHTML = '';
+
+      availableVoices.forEach((item, index) => {
+        const opt1 = document.createElement('option');
+        opt1.value = index;
+        opt1.textContent = item.label;
+
+        const opt2 = document.createElement('option');
+        opt2.value = index;
+        opt2.textContent = item.label;
+
+        voiceSelect.appendChild(opt1);
+        screenVoiceSelect.appendChild(opt2);
+      });
+
+      // 기존 선택 복원 또는 1순위(선희 또는 인준 등 고품질 음성) 선택
+      let targetIndex = availableVoices.findIndex(v => v.id === currentSelectedId);
+      if (targetIndex === -1) {
+        // 기본으로 고품질 여성 AI 음성(선희) 또는 남성 AI 음성(인준) 지정
+        targetIndex = 0;
+      }
+
+      voiceSelect.selectedIndex = targetIndex;
+      screenVoiceSelect.selectedIndex = targetIndex;
+      selectedVoiceItem = availableVoices[targetIndex] || null;
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => populateVoiceList();
+    }
+    // 페이지 로드 시 즉시 음성 목록 채우기
+    populateVoiceList();
+
+    // 두 개의 음성 선택 드롭다운 상호 동기화 이벤트
+    function onVoiceChange(e) {
+      const idx = parseInt(e.target.value, 10);
+      if (!isNaN(idx) && availableVoices[idx]) {
+        selectedVoiceItem = availableVoices[idx];
+        const voiceSelect = document.getElementById('voiceSelect');
+        const screenVoiceSelect = document.getElementById('screenVoiceSelect');
+        if (voiceSelect) voiceSelect.selectedIndex = idx;
+        if (screenVoiceSelect) screenVoiceSelect.selectedIndex = idx;
+      }
+    }
+
+    const voiceSelectElem = document.getElementById('voiceSelect');
+    if (voiceSelectElem) voiceSelectElem.addEventListener('change', onVoiceChange);
+
+    const screenVoiceSelectElem = document.getElementById('screenVoiceSelect');
+    if (screenVoiceSelectElem) screenVoiceSelectElem.addEventListener('change', onVoiceChange);
+
+    function updateTtsButtonState(playing) {
+      const ttsBtn = document.getElementById('ttsBtn');
+      const screenTtsBtn = document.getElementById('screenTtsBtn');
+      
+      if (playing) {
+        if (ttsBtn) {
+          ttsBtn.innerHTML = '⏹ 낭독 정지';
+          ttsBtn.classList.add('is-speaking');
+        }
+        if (screenTtsBtn) {
+          screenTtsBtn.innerHTML = '⏹ 정지';
+          screenTtsBtn.classList.add('is-speaking');
+        }
+      } else {
+        if (ttsBtn) {
+          ttsBtn.innerHTML = '🔊 말씀 읽기';
+          ttsBtn.classList.remove('is-speaking');
+        }
+        if (screenTtsBtn) {
+          screenTtsBtn.innerHTML = '🔊 읽기';
+          screenTtsBtn.classList.remove('is-speaking');
+        }
+      }
+    }
+
+    function clearVerseHighlights() {
+      document.querySelectorAll('.verse-line.reading-active').forEach(el => {
+        el.classList.remove('reading-active');
+      });
+    }
+
+    function stopTTS() {
+      // 1. AI 오디오 재생 중지
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
+      }
+      // 2. 브라우저 Web Speech 재생 중지
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      isTtsPlaying = false;
+      currentTtsIndex = 0;
+      clearVerseHighlights();
+      updateTtsButtonState(false);
+    }
+
+    function speakVerseAt(index) {
+      if (!isTtsPlaying) return;
+      if (!currentResults || index >= currentResults.length) {
+        stopTTS();
+        return;
+      }
+
+      currentTtsIndex = index;
+      clearVerseHighlights();
+
+      // 현재 낭독 중인 구절 하이라이트 및 부드러운 스크롤
+      const currentEl = document.getElementById(`verse-line-${index}`);
+      if (currentEl) {
+        currentEl.classList.add('reading-active');
+        currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      const item = currentResults[index];
+      // 절 번호(숫자)는 읽지 않고 본문 말씀만 낭독
+      const speechText = item.text.trim();
+      if (!speechText) {
+        speakVerseAt(index + 1);
+        return;
+      }
+
+      const voice = selectedVoiceItem || (availableVoices.length > 0 ? availableVoices[0] : null);
+
+      // A. 고품질 신경망 AI 음성 (서버 오디오 스트리밍)
+      if (voice && voice.type === 'ai') {
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio = null;
+        }
+
+        const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost:8080';
+        const url = `${host}/api/tts?voice=${encodeURIComponent(voice.apiVoice)}&text=${encodeURIComponent(speechText)}`;
+        currentAudio = new Audio(url);
+
+        currentAudio.onended = () => {
+          if (isTtsPlaying) {
+            speakVerseAt(index + 1);
+          }
+        };
+
+        currentAudio.onerror = (e) => {
+          console.warn('AI 음성 스트리밍 실패, 브라우저 음성으로 fallback 시도:', e);
+          speakWithBrowserSpeech(speechText, voice, index);
+        };
+
+        currentAudio.play().catch(err => {
+          console.warn('오디오 자동 재생 오류:', err);
+          speakWithBrowserSpeech(speechText, voice, index);
+        });
+      } else {
+        // B. 브라우저 내장 Web Speech API
+        speakWithBrowserSpeech(speechText, voice, index);
+      }
+    }
+
+    function speakWithBrowserSpeech(speechText, voice, index) {
+      if (!('speechSynthesis' in window)) {
+        stopTTS();
+        return;
+      }
+
+      const utter = new SpeechSynthesisUtterance(speechText);
+      utter.lang = 'ko-KR';
+      utter.rate = 0.95; // 정갈하고 듣기 편한 속도
+      utter.pitch = (voice && voice.pitch) ? voice.pitch : 1.0;
+
+      if (voice && voice.rawVoice) {
+        utter.voice = voice.rawVoice;
+      }
+
+      utter.onend = () => {
+        if (isTtsPlaying) {
+          speakVerseAt(index + 1);
+        }
+      };
+
+      utter.onerror = (e) => {
+        console.warn('브라우저 TTS 재생 오류:', e);
+        stopTTS();
+      };
+
+      window.speechSynthesis.speak(utter);
+    }
+
+    function startTTS() {
+      if (!currentResults || currentResults.length === 0) {
+        alert('낭독할 성경 구절이 없습니다. 먼저 구절을 검색해 주세요.');
+        return;
+      }
+
+      stopTTS();
+      isTtsPlaying = true;
+      updateTtsButtonState(true);
+      speakVerseAt(0);
+    }
+
+    function toggleTTS() {
+      if (isTtsPlaying) {
+        stopTTS();
+      } else {
+        startTTS();
+      }
+    }
+
+    const ttsBtn = document.getElementById('ttsBtn');
+    if (ttsBtn) ttsBtn.addEventListener('click', toggleTTS);
+
+    const screenTtsBtn = document.getElementById('screenTtsBtn');
+    if (screenTtsBtn) screenTtsBtn.addEventListener('click', toggleTTS);
+
+    window.addEventListener('beforeunload', () => {
+      stopTTS();
     });
 
     // 전역 단축키

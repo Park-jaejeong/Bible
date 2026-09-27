@@ -1,0 +1,16 @@
+{
+  "name": "개역개정 성경 뷰어",
+  "short_name": "성경뷰어",
+  "description": "원하는 장절을 빠르게 검색하여 대형 화면으로 볼 수 있는 초경량 성경 뷰어",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2b6cb0",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

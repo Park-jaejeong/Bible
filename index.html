@@ -1255,7 +1255,8 @@
     let availableVoices = [];
     let selectedVoiceItem = null;
     let currentAudio = null;
-    let ttsPlaybackRate = 1.15; // 기본 속도 (약 1.2배속 추천)
+    let ttsPlaybackRate = 1.0; // 기본 속도 (1.0x 보통)
+    let ttsRestarting = false; // 목소리 변경으로 재시작 중일 때 이전 음성의 종료 이벤트 무시
 
     const SPEED_OPTIONS = [
       { value: '0.8', label: '0.8x (천천히)' },
@@ -1478,6 +1479,30 @@
         const screenVoiceSelect = document.getElementById('screenVoiceSelect');
         if (voiceSelect) voiceSelect.selectedIndex = idx;
         if (screenVoiceSelect) screenVoiceSelect.selectedIndex = idx;
+        // 낭독 중에 목소리를 바꾸면 이전 목소리로 미리 받아둔 오디오를 버리고
+        // 현재 절부터 새로 선택한 목소리로 즉시 다시 읽기
+        if (isTtsPlaying) {
+          const resumeIndex = currentTtsIndex;
+          if (currentAudio) {
+            currentAudio.onended = null;
+            currentAudio.onerror = null;
+            try { currentAudio.pause(); } catch (err) {}
+            currentAudio = null;
+          }
+          audioCache.forEach(a => {
+            try { a.pause(); a.src = ''; } catch (err) {}
+          });
+          audioCache.clear();
+          if ('speechSynthesis' in window) {
+            ttsRestarting = true;
+            window.speechSynthesis.cancel();
+          }
+          // cancel() 직후 발생하는 onend/onerror 이벤트가 정리된 뒤 재시작
+          setTimeout(() => {
+            ttsRestarting = false;
+            if (isTtsPlaying) speakVerseAt(resumeIndex);
+          }, 80);
+        }
       }
     }
 
@@ -1656,12 +1681,14 @@
       }
 
       utter.onend = () => {
+        if (ttsRestarting) return;
         if (isTtsPlaying) {
           speakVerseAt(index + 1);
         }
       };
 
       utter.onerror = (e) => {
+        if (ttsRestarting) return;
         console.warn('브라우저 TTS 재생 오류:', e);
         stopTTS();
       };
